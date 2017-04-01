@@ -1,0 +1,20 @@
+author:
+- "Prénom *Nom*"
+- "Prénom2 Particule *Nom2*"
+- …
+unit: "Test"
+year: 2017
+tags:
+- "project management"
+- "C"
+documents:
+- type: notes
+  source: "cours_01.md"
+  children:
+  - type: exercise
+    source: "ex_01.md"
+  - type: exercise
+    source: "ex_02.md"
+- type: test
+  source: "test.md"
+
