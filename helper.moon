@@ -4,30 +4,6 @@ lfs = require "lfs"
 yaml = require "lyaml"
 argparse = require "argparse"
 
-find_all = (where = ".") ->
-	traversal = (where) ->
-		for entry in lfs.dir where
-			if entry\sub(1, 1) == "."
-				continue
-
-			entry = where .. "/" .. entry
-
-			attributes, e = lfs.attributes entry
-
-			unless attributes
-				io.stderr\write e, "\n"
-				continue
-
-			if attributes.mode == "directory"
-				traversal entry
-			else
-				if not entry\match("/gbpl.yml$")
-					continue
-
-				coroutine.yield entry, attributes
-
-	coroutine.wrap -> traversal where
-
 Index = class
 	new: =>
 		@stack = {1}
@@ -79,7 +55,7 @@ Fragment = class
 
 Document = class
 	new: (filename) =>
-		@dirname = filename\gsub("/gbpl%.yaml$", "")
+		@dirname = filename\gsub("/gbpl%.yml$", "")
 		@filename = filename
 
 		-- FIXME: error checking
@@ -114,6 +90,72 @@ Document = class
 	__tostring: =>
 		"<Document: %s>"\format @filename
 
+find_all = (where = ".") ->
+	traversal = (where) ->
+		for entry in lfs.dir where
+			if entry\sub(1, 1) == "."
+				continue
+
+			entry = where .. "/" .. entry
+
+			attributes, e = lfs.attributes entry
+
+			unless attributes
+				io.stderr\write e, "\n"
+				continue
+
+			if attributes.mode == "directory"
+				traversal entry
+			else
+				if not entry\match("/gbpl.yml$")
+					continue
+
+				coroutine.yield entry, attributes
+
+	coroutine.wrap -> traversal where
+
+get_fragments = (arg) ->
+	routine = ->
+		for f in find_all arg.repository
+			document = Document f
+
+			for _, fragment in ipairs document.fragments
+				if arg.index
+					if tostring(fragment.index) != arg.index
+						continue
+
+				if arg.type
+					if string.lower(fragment.type) != string.lower(arg.type)
+						continue
+
+				if arg.unit
+					if string.match string.lower(fragment.unit), string.lower(arg.unit)
+						continue
+
+				if arg.year
+					if fragment.year != arg.year
+						continue
+
+				if arg.author
+					if type(fragment.author) == "table"
+						foundOne = false
+
+						for author in *fragment.author
+							if string.lower(author)\match string.lower(arg.author)
+								foundOne = true
+
+								break
+
+						if not foundOne
+							continue
+					else
+						if string.lower(fragment.author) != string.lower(arg.author)
+							continue
+
+				coroutine.yield document, fragment
+
+	coroutine.wrap routine
+
 parser = with argparse "helper", "Helper for the Great Free Pedagogical Library"
 	with \command "l list"
 		with \argument "repository"
@@ -125,50 +167,35 @@ parser = with argparse "helper", "Helper for the Great Free Pedagogical Library"
 		\option "-u --unit"
 		\option "-a --author"
 
-	\command "e export"
+	with \command "e export"
+		with \argument "repository"
+			\args "?"
+
+		\option "-i --index"
+		\option "-t --type"
+		\option "-y --year"
+		\option "-u --unit"
+		\option "-a --author"
 
 arg = parser\parse!
 
 if arg.l
-	for f in find_all arg.repository
-		document = Document f
-
-		for _, fragment in ipairs document.fragments
-			if arg.index
-				if tostring(fragment.index) != arg.index
-					continue
-
-			if arg.type
-				if string.lower(fragment.type) != string.lower(arg.type)
-					continue
-
-			if arg.unit
-				if string.match string.lower(fragment.unit), string.lower(arg.unit)
-					continue
-
-			if arg.year
-				if fragment.year != arg.year
-					continue
-
-			if arg.author
-				if type(fragment.author) == "table"
-					foundOne = false
-
-					for author in *fragment.author
-						if string.lower(author)\match string.lower(arg.author)
-							foundOne = true
-
-							break
-
-					if not foundOne
-						continue
-				else
-					if string.lower(fragment.author) != string.lower(arg.author)
-						continue
-
-			print fragment.repository\gsub("^%./", "") .. " " .. tostring(fragment)
+	for document, fragment in get_fragments arg
+		print fragment.repository\gsub("^%./", "") .. " " .. tostring(fragment)
 elseif arg.e
-	false -- FIXME: implement
+	for document, fragment in get_fragments arg
+		if fragment.source
+			f, e = io.open document.dirname .. "/" .. fragment.source, "r"
+
+			unless f
+				io.stderr\write e, "\n"
+				continue
+
+			for line in f\lines!
+				io.stdout\write line, "\n"
+			f\close!
+		else
+			io.stderr\write "error: fragment has no source.\n"
 else
 	false -- FIXME: error
 
